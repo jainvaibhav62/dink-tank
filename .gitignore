@@ -20,6 +20,10 @@ dist-ssr
 # (npm ci, actions/setup-node cache) needs it committed.
 !package-lock.json
 
+# Local tooling (graphify / Claude) — machine-specific, not committed
+.claude/
+CLAUDE.md
+
 # Firebase
 .firebase/
 firebase-debug.log*
