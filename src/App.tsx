@@ -1,0 +1,133 @@
+import { HashRouter, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
+import { Layout } from './components/Layout'
+import { ProtectedRoute } from './components/ProtectedRoute'
+import { HomePage } from './pages/Home'
+import { ProfilePage } from './pages/Profile'
+import { SignUpPage } from './pages/SignUp'
+import { SignInPage } from './pages/SignIn'
+import { ForgotPasswordPage } from './pages/ForgotPassword'
+import { VerifyEmailPage } from './pages/VerifyEmail'
+import { TournamentsPage } from './pages/Tournaments'
+import { TournamentDetailPage } from './pages/TournamentDetail'
+import { LeaderboardPage } from './pages/Leaderboard'
+import { NotFoundPage } from './pages/NotFound'
+import { AdminLocationsPage } from './pages/admin/Locations'
+import { AdminTournamentsPage } from './pages/admin/Tournaments'
+import { AdminRegistrationsPage } from './pages/admin/Registrations'
+import { AdminFixturesPrintPage } from './pages/admin/FixturesPrint'
+import { AdminUsersPage } from './pages/admin/Users'
+import { AdminUserProfilePage } from './pages/admin/UserProfile'
+import { AdminAnnouncementsPage } from './pages/admin/Announcements'
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <HashRouter>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/signup" element={<SignUpPage />} />
+              <Route path="/signin" element={<SignInPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tournaments"
+                element={
+                  <ProtectedRoute>
+                    <TournamentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tournaments/:tournamentId"
+                element={
+                  <ProtectedRoute>
+                    <TournamentDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/leaderboard"
+                element={
+                  <ProtectedRoute>
+                    <LeaderboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminUsersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users/:userId"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminUserProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/locations"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminLocationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/announcements"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminAnnouncementsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/tournaments"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminTournamentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/tournaments/:tournamentId/registrations"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminRegistrationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/tournaments/:tournamentId/print"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminFixturesPrintPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Layout>
+        </HashRouter>
+      </AuthProvider>
+    </ThemeProvider>
+  )
+}
+
+export default App

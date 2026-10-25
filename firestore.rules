@@ -1,0 +1,151 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // photoURL is a client-resized JPEG data: URL (no Cloud Storage) — cap it
+    // well above what the resizer produces (~5-30KB) so a crafted direct API
+    // write can't stuff a huge payload in.
+    function hasValidPhoto() {
+      return !('photoURL' in request.resource.data) ||
+        request.resource.data.photoURL.size() < 300000;
+    }
+
+    // Users: the full profile (includes email) is only readable by its owner or
+    // an admin. A user can create/update their own profile but cannot change
+    // their own role; only an admin can promote/demote.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.role == 'player' && hasValidPhoto();
+      allow update: if hasValidPhoto() &&
+        ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Public-safe subset of a profile (no email) — world-readable so the public
+    // landing page can show leaderboard previews.
+    match /publicProfiles/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) && hasValidPhoto();
+      allow delete: if isAdmin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /courts/{courtId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Auto-confirm/waitlist by capacity (no manual admin approval step) — the
+    // client decides confirmed vs waitlisted from a live count of confirmed
+    // registrations. Withdrawing/being removed frees a slot and the acting
+    // user's own client promotes the next waitlisted registration — which means
+    // flipping *someone else's* doc from waitlisted to confirmed. That's the
+    // narrow third update clause: any signed-in user may do exactly that one
+    // transition and nothing else.
+    match /registrations/{registrationId} {
+      allow read: if isSignedIn();
+      allow create: if (isOwner(request.resource.data.userId) || isAdmin()) &&
+        request.resource.data.status in ['confirmed', 'waitlisted'];
+      allow update: if isAdmin() ||
+        (isOwner(resource.data.userId) &&
+         request.resource.data.status in ['confirmed', 'waitlisted', 'withdrawn']) ||
+        (isSignedIn() &&
+         resource.data.status == 'waitlisted' &&
+         request.resource.data.status == 'confirmed' &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+      allow delete: if isAdmin();
+    }
+
+    // A legal pickleball result: whole, non-negative, not tied, the winner
+    // reached the tournament's points target and led by its win-by margin, and
+    // the recorded winner matches the higher score. Reads the tournament doc so
+    // the server (not just the client) enforces win-by-2.
+    function legalScore(data) {
+      let t = get(/databases/$(database)/documents/tournaments/$(data.tournamentId)).data;
+      let target = ('pointsTarget' in t) ? t.pointsTarget : 11;
+      let margin = ('winBy' in t) ? t.winBy : 2;
+      return data.scoreA is int && data.scoreB is int &&
+        data.scoreA >= 0 && data.scoreB >= 0 &&
+        data.scoreA != data.scoreB &&
+        (data.scoreA > data.scoreB
+          ? (data.scoreA - data.scoreB >= margin && data.scoreA >= target && data.winner == 'A')
+          : (data.scoreB - data.scoreA >= margin && data.scoreB >= target && data.winner == 'B'));
+    }
+
+    // Matches: public read for live tournament screens. Admins can always edit
+    // (unless locked). Any of the players in a match may also submit its score
+    // exactly once — the `resource.data.status != 'completed'` guard is what
+    // makes it one-time: once a participant's submission flips status to
+    // 'completed', this clause no longer matches, leaving only the admin clause
+    // able to correct it.
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update: if
+        (isAdmin() && resource.data.status != 'locked') ||
+        (isSignedIn() &&
+         resource.data.status != 'completed' && resource.data.status != 'locked' &&
+         (request.auth.uid in resource.data.teamA || request.auth.uid in resource.data.teamB) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'scoreA', 'scoreB', 'winner', 'completedAt']) &&
+         request.resource.data.status == 'completed' &&
+         legalScore(request.resource.data));
+      allow delete: if isAdmin() && resource.data.status != 'locked';
+    }
+
+    // Aggregates maintained exclusively by Cloud Functions (Admin SDK bypasses
+    // these rules) — no client ever writes them directly.
+    match /tournamentStats/{statId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /playerStats/{userId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /headToHead/{pairId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Created by Cloud Functions; the owner may only mark their own read.
+    match /notifications/{userId}/items/{notificationId} {
+      allow read, update: if isOwner(userId);
+    }
+
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

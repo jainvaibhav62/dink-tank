@@ -1,0 +1,129 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+/* ---- Motion & effects (the "dynamic" layer) ------------------------------ */
+
+@keyframes dt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dt-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes dt-gradient-pan {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes dt-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(6deg);
+  }
+}
+
+@keyframes dt-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-dt-rise,
+  .animate-dt-pop,
+  .dt-hero-gradient,
+  .dt-float {
+    animation: none !important;
+  }
+}
+
+.animate-dt-rise {
+  animation: dt-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-dt-pop {
+  animation: dt-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dt-float {
+  animation: dt-float 6s ease-in-out infinite;
+}
+
+/* Animated multi-stop gradient used on the hero. */
+.dt-hero-gradient {
+  background-image: linear-gradient(120deg, #65a30d, #16a34a, #059669, #0d9488, #16a34a);
+  background-size: 300% 300%;
+  animation: dt-gradient-pan 12s ease infinite;
+}
+
+/* Gradient text (headlines). */
+.dt-gradient-text {
+  background-image: linear-gradient(120deg, #4d7c0f, #16a34a, #0d9488);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Card hover-lift: a small, consistent interaction on tappable surfaces. */
+.dt-lift {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+.dt-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -12px rgb(0 0 0 / 0.25);
+}
+
+/* Shimmer sweep for skeletons / highlight bars. */
+.dt-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.dt-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  animation: dt-shimmer 2s infinite;
+}

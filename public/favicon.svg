@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#16a34a"/>
+  <!-- pickleball: a circle with holes -->
+  <circle cx="32" cy="32" r="18" fill="#d9f99d"/>
+  <g fill="#16a34a">
+    <circle cx="32" cy="20" r="2.6"/>
+    <circle cx="24" cy="26" r="2.6"/>
+    <circle cx="40" cy="26" r="2.6"/>
+    <circle cx="22" cy="36" r="2.6"/>
+    <circle cx="32" cy="34" r="2.6"/>
+    <circle cx="42" cy="36" r="2.6"/>
+    <circle cx="27" cy="44" r="2.6"/>
+    <circle cx="37" cy="44" r="2.6"/>
+  </g>
+</svg>
