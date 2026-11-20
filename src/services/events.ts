@@ -183,6 +183,63 @@ export async function generateNextRound(eventId: string): Promise<{ round: numbe
   return { round, courts: matches.length }
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const r = [...arr]
+  for (let i = r.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[r[i], r[j]] = [r[j], r[i]]
+  }
+  return r
+}
+
+/** Round 1 is dynamic: as players check in, seat each full group of 4 onto the
+ * next free court immediately (no waiting for everyone). Does nothing once the
+ * event is past round 1 or all courts are already filled. Idempotent. */
+export async function seatRound1Arrivals(eventId: string): Promise<number> {
+  const event = await getEvent(eventId)
+  if (!event || event.currentRound > 1) return 0
+
+  const existing = await listEventMatches(eventId)
+  const round1 = existing.filter((m) => m.round === 1)
+  if (round1.length >= event.courtCount) return 0
+
+  const checkedIn = await listCheckedInIds(eventId)
+  const assigned = new Set(round1.flatMap((m) => [...m.teamA, ...m.teamB]))
+  const unassigned = shuffle(
+    event.participants.map((p) => p.id).filter((id) => checkedIn.has(id) && !assigned.has(id)),
+  )
+
+  let free = event.courtCount - round1.length
+  let courtIndex = round1.length
+  let created = 0
+  const batch = writeBatch(db)
+  while (free > 0 && unassigned.length >= 4) {
+    const four = unassigned.splice(0, 4)
+    const ref = doc(eventMatchesRef)
+    batch.set(ref, {
+      id: ref.id,
+      eventId,
+      round: 1,
+      courtIndex,
+      teamA: [four[0], four[1]],
+      teamB: [four[2], four[3]],
+      scoreA: null,
+      scoreB: null,
+      winner: null,
+      status: 'scheduled',
+    } as unknown as EventMatch)
+    courtIndex++
+    free--
+    created++
+  }
+  if (created === 0) return 0
+  if (event.currentRound === 0) {
+    batch.update(doc(db, 'events', eventId), { currentRound: 1, status: 'live' })
+  }
+  await batch.commit()
+  return created
+}
+
 export async function recordEventScore(
   match: EventMatch,
   scoreA: number,

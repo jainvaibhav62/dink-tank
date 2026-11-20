@@ -8,6 +8,7 @@ import {
   clearEventScore,
   generateNextRound,
   recordEventScore,
+  seatRound1Arrivals,
   setCheckin,
   setEventStatus,
   subscribeToCheckins,
@@ -73,6 +74,13 @@ export function LiveEventPage() {
   const roundScored = currentMatches.length > 0 && currentMatches.every((m) => m.status === 'completed')
   const checkedInCount = event.participants.filter((p) => checkedIn.has(p.id)).length
 
+  // Round 1 is dynamic: courts fill as players are checked in.
+  const round1 = matches.filter((m) => m.round === 1)
+  const seatedRound1 = new Set(round1.flatMap((m) => [...m.teamA, ...m.teamB]))
+  const waitingToSeat = event.participants.filter((p) => checkedIn.has(p.id) && !seatedRound1.has(p.id)).length
+  const canSeatRound1 = event.currentRound <= 1 && round1.length < event.courtCount
+  const seatableCourts = Math.min(event.courtCount - round1.length, Math.floor(waitingToSeat / 4))
+
   async function run(fn: () => Promise<unknown>) {
     setBusy(true)
     setError('')
@@ -88,6 +96,20 @@ export function LiveEventPage() {
   async function handleScore(match: EventMatch, a: number, b: number) {
     await recordEventScore(match, a, b, event!.pointsTarget, event!.winBy)
     burstConfetti(900)
+  }
+
+  async function handleCheckin(participantId: string, next: boolean) {
+    setError('')
+    // Don't let a player be checked out while they're on a court this round.
+    if (!next && currentMatches.some((m) => [...m.teamA, ...m.teamB].includes(participantId))) {
+      setError('That player is on a court this round — you can’t check them out yet.')
+      return
+    }
+    await setCheckin(event!.id, participantId, next)
+    // Dynamic round 1: seat a court as soon as four are ready.
+    if (next && event!.currentRound <= 1) {
+      await seatRound1Arrivals(event!.id)
+    }
   }
 
   const TabBtn = ({ id, label }: { id: Tab; label: string }) => (
@@ -122,20 +144,36 @@ export function LiveEventPage() {
       {/* Admin round controls */}
       {isAdmin && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-          <button
-            onClick={() => run(() => generateNextRound(event.id))}
-            disabled={busy || (event.currentRound > 0 && !roundScored) || checkedInCount < 4}
-            title={
-              checkedInCount < 4
-                ? 'Need at least 4 checked-in players'
-                : event.currentRound > 0 && !roundScored
-                  ? 'Finish scoring this round first'
-                  : ''
-            }
-            className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-          >
-            {busy ? 'Working…' : event.currentRound === 0 ? '▶ Start Round 1' : `▶ Start Round ${event.currentRound + 1}`}
-          </button>
+          {/* Round 1 — seat checked-in players onto courts as they arrive */}
+          {canSeatRound1 && (
+            <button
+              onClick={() => run(() => seatRound1Arrivals(event.id))}
+              disabled={busy || seatableCourts < 1}
+              title={seatableCourts < 1 ? 'Check in 4 players not yet on a court' : ''}
+              className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {busy
+                ? 'Working…'
+                : `▶ Seat ${Math.max(seatableCourts, 0)} court${seatableCourts === 1 ? '' : 's'}${waitingToSeat > 0 ? ` · ${waitingToSeat} waiting` : ''}`}
+            </button>
+          )}
+          {/* Round 2+ — randomized rotation */}
+          {event.currentRound >= 1 && (
+            <button
+              onClick={() => run(() => generateNextRound(event.id))}
+              disabled={busy || !roundScored || checkedInCount < 4}
+              title={
+                checkedInCount < 4
+                  ? 'Need at least 4 checked-in players'
+                  : !roundScored
+                    ? 'Finish scoring this round first'
+                    : ''
+              }
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {busy ? 'Working…' : `▶ Start Round ${event.currentRound + 1}`}
+            </button>
+          )}
           {event.currentRound > 0 && (
             <button
               onClick={() => run(() => undoLastRound(event.id))}
@@ -174,7 +212,9 @@ export function LiveEventPage() {
       {effectiveTab === 'checkin' && (
         <div className="space-y-4">
           <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-200">
-            👋 Tap your name to check in. Your button turns <strong>green</strong> and you'll be put into the rotation.
+            {isAdmin
+              ? '👋 Tap a player to check them in — their tile turns green and they enter the rotation.'
+              : '👀 Players shown in green are checked in and playing. The organizer manages check-in.'}
           </div>
 
           {isAdmin && (
@@ -207,11 +247,14 @@ export function LiveEventPage() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => setCheckin(event.id, p.id, !isIn)}
-                  className={`flex items-center gap-2 rounded-xl border p-3 text-left transition active:scale-95 ${
+                  onClick={isAdmin ? () => handleCheckin(p.id, !isIn) : undefined}
+                  disabled={!isAdmin}
+                  className={`flex items-center gap-2 rounded-xl border p-3 text-left transition ${
+                    isAdmin ? 'cursor-pointer active:scale-95' : 'cursor-default'
+                  } ${
                     isIn
                       ? 'border-green-500 bg-green-500 text-white shadow-md'
-                      : 'border-slate-200 bg-white text-slate-800 hover:border-green-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
+                      : `border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${isAdmin ? 'hover:border-green-400' : ''}`
                   }`}
                 >
                   <span
@@ -224,7 +267,7 @@ export function LiveEventPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{p.name}</span>
                     <span className={`text-xs ${isIn ? 'text-white/90' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {isIn ? '✓ Playing' : 'Tap to check in'}
+                      {isIn ? '✓ Playing' : isAdmin ? 'Tap to check in' : 'Not checked in'}
                     </span>
                   </span>
                 </button>

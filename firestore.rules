@@ -155,12 +155,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Self check-in: anyone with the link can check a player in/out (no auth).
-    // Shape-locked so a write can't do anything but set the three fields.
+    // Check-in: world-readable (spectators see who's playing) but only an admin
+    // checks players in/out.
     match /eventCheckins/{id} {
       allow read: if true;
-      allow write: if request.resource.data.keys().hasOnly(['eventId', 'participantId', 'checkedIn']) &&
-        request.resource.data.checkedIn is bool;
+      allow write: if isAdmin();
     }
 
     // A legal event score: whole, non-negative, not tied, winner reached the
