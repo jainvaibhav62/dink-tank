@@ -66,9 +66,33 @@ export async function addParticipant(eventId: string, name: string) {
   if (!event) throw new Error('Event not found.')
   const trimmed = name.trim()
   if (!trimmed) return
-  const nextNum = event.participants.length + 1
-  const participant: EventParticipant = { id: `p${nextNum}`, name: trimmed, initials: initialsOf(trimmed) }
+  // Ids must stay unique even after removals, so key off the max existing id.
+  const maxNum = event.participants.reduce((max, p) => {
+    const n = parseInt(p.id.replace(/^p/, ''), 10)
+    return Number.isFinite(n) ? Math.max(max, n) : max
+  }, 0)
+  const participant: EventParticipant = { id: `p${maxNum + 1}`, name: trimmed, initials: initialsOf(trimmed) }
   await updateDoc(doc(db, 'events', eventId), { participants: [...event.participants, participant] })
+}
+
+/** Admin: remove a player from the roster. Blocked once they appear in any
+ * match (would orphan results); check them out and finish/undo first. */
+export async function removeParticipant(eventId: string, participantId: string) {
+  const event = await getEvent(eventId)
+  if (!event) throw new Error('Event not found.')
+  const matches = await listEventMatches(eventId)
+  if (matches.some((m) => [...m.teamA, ...m.teamB].includes(participantId))) {
+    throw new Error('That player is already in a match — undo the round or finish the event before removing them.')
+  }
+  await updateDoc(doc(db, 'events', eventId), {
+    participants: event.participants.filter((p) => p.id !== participantId),
+  })
+  // Clear any check-in so stale state can't linger.
+  await setDoc(doc(db, 'eventCheckins', checkinDocId(eventId, participantId)), {
+    eventId,
+    participantId,
+    checkedIn: false,
+  })
 }
 
 export interface CreateEventInput {

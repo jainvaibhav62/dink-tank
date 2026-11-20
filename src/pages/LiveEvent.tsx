@@ -8,6 +8,7 @@ import {
   clearEventScore,
   generateNextRound,
   recordEventScore,
+  removeParticipant,
   seatRound1Arrivals,
   setCheckin,
   setEventStatus,
@@ -110,6 +111,11 @@ export function LiveEventPage() {
     if (next && event!.currentRound <= 1) {
       await seatRound1Arrivals(event!.id)
     }
+  }
+
+  async function handleRemove(participantId: string, name: string) {
+    if (!window.confirm(`Remove ${name} from this event?`)) return
+    await run(() => removeParticipant(event!.id, participantId))
   }
 
   const TabBtn = ({ id, label }: { id: Tab; label: string }) => (
@@ -245,32 +251,43 @@ export function LiveEventPage() {
             {event.participants.map((p) => {
               const isIn = checkedIn.has(p.id)
               return (
-                <button
-                  key={p.id}
-                  onClick={isAdmin ? () => handleCheckin(p.id, !isIn) : undefined}
-                  disabled={!isAdmin}
-                  className={`flex items-center gap-2 rounded-xl border p-3 text-left transition ${
-                    isAdmin ? 'cursor-pointer active:scale-95' : 'cursor-default'
-                  } ${
-                    isIn
-                      ? 'border-green-500 bg-green-500 text-white shadow-md'
-                      : `border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${isAdmin ? 'hover:border-green-400' : ''}`
-                  }`}
-                >
-                  <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                      isIn ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200'
+                <div key={p.id} className="relative">
+                  <button
+                    onClick={isAdmin ? () => handleCheckin(p.id, !isIn) : undefined}
+                    disabled={!isAdmin}
+                    className={`flex w-full items-center gap-2 rounded-xl border p-3 text-left transition ${
+                      isAdmin ? 'cursor-pointer active:scale-95' : 'cursor-default'
+                    } ${
+                      isIn
+                        ? 'border-green-500 bg-green-500 text-white shadow-md'
+                        : `border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${isAdmin ? 'hover:border-green-400' : ''}`
                     }`}
                   >
-                    {p.initials}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{p.name}</span>
-                    <span className={`text-xs ${isIn ? 'text-white/90' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {isIn ? '✓ Playing' : isAdmin ? 'Tap to check in' : 'Not checked in'}
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                        isIn ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200'
+                      }`}
+                    >
+                      {p.initials}
                     </span>
-                  </span>
-                </button>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{p.name}</span>
+                      <span className={`text-xs ${isIn ? 'text-white/90' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {isIn ? '✓ Playing' : isAdmin ? 'Tap to check in' : 'Not checked in'}
+                      </span>
+                    </span>
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleRemove(p.id, p.name)}
+                      title="Remove player"
+                      aria-label={`Remove ${p.name}`}
+                      className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[10px] font-bold text-white shadow hover:bg-red-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               )
             })}
           </div>
