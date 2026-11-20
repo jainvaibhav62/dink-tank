@@ -12,7 +12,9 @@ import { VerifyEmailPage } from './pages/VerifyEmail'
 import { TournamentsPage } from './pages/Tournaments'
 import { TournamentDetailPage } from './pages/TournamentDetail'
 import { LeaderboardPage } from './pages/Leaderboard'
+import { LiveEventPage } from './pages/LiveEvent'
 import { NotFoundPage } from './pages/NotFound'
+import { AdminEventsPage } from './pages/admin/Events'
 import { AdminLocationsPage } from './pages/admin/Locations'
 import { AdminTournamentsPage } from './pages/admin/Tournaments'
 import { AdminRegistrationsPage } from './pages/admin/Registrations'
@@ -29,6 +31,8 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<HomePage />} />
+              {/* Public watch link — no login needed to spectate a live event. */}
+              <Route path="/events/:eventId" element={<LiveEventPage />} />
               <Route path="/signup" element={<SignUpPage />} />
               <Route path="/signin" element={<SignInPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -94,6 +98,14 @@ function App() {
                 element={
                   <ProtectedRoute requireAdmin>
                     <AdminAnnouncementsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/events"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminEventsPage />
                   </ProtectedRoute>
                 }
               />

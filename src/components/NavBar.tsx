@@ -76,6 +76,9 @@ export function NavBar() {
                   </button>
                   {adminMenuOpen && (
                     <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                      <NavLink to="/admin/events" className={dropdownLinkClass} onClick={() => setAdminMenuOpen(false)}>
+                        Live Events
+                      </NavLink>
                       <NavLink to="/admin/users" className={dropdownLinkClass} onClick={() => setAdminMenuOpen(false)}>
                         Users
                       </NavLink>
@@ -160,6 +163,9 @@ export function NavBar() {
                 </button>
                 {mobileOpen && (
                   <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                    <NavLink to="/admin/events" className={dropdownLinkClass} onClick={() => setMobileOpen(false)}>
+                      Live Events
+                    </NavLink>
                     <NavLink to="/admin/users" className={dropdownLinkClass} onClick={() => setMobileOpen(false)}>
                       Users
                     </NavLink>

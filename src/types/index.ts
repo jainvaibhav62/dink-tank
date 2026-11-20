@@ -184,3 +184,44 @@ export interface Announcement {
   createdBy: string
   createdAt: Timestamp
 }
+
+/* ---- Live Event mode (no player signups; admin-run, roster of names) ------ */
+
+/** A participant in a live event — just a name, no auth account. */
+export interface EventParticipant {
+  id: string // 'p1', 'p2', … (stable within the event)
+  name: string
+  initials: string
+}
+
+export type EventStatus = 'setup' | 'live' | 'completed'
+
+export interface PickleEvent {
+  id: string
+  name: string
+  date: Timestamp
+  courtCount: number
+  pointsTarget: number
+  winBy: number
+  participants: EventParticipant[]
+  status: EventStatus
+  currentRound: number // 0 = not started; otherwise the latest generated round
+  createdBy: string
+  createdAt: Timestamp
+}
+
+export type EventMatchStatus = 'scheduled' | 'completed'
+
+/** One match on one court in one round. teamA/teamB hold EventParticipant ids. */
+export interface EventMatch {
+  id: string
+  eventId: string
+  round: number
+  courtIndex: number
+  teamA: string[]
+  teamB: string[]
+  scoreA: number | null
+  scoreB: number | null
+  winner: 'A' | 'B' | null
+  status: EventMatchStatus
+}

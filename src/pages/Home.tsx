@@ -123,6 +123,13 @@ export function HomePage() {
         {isAdmin && (
           <>
             <Link
+              to="/admin/events"
+              className="dt-lift rounded-2xl border border-slate-200 bg-white p-5 hover:border-green-400 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <h2 className="font-semibold text-slate-900 dark:text-slate-100">📺 Live events</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Run open play with a fixed roster — stadium view.</p>
+            </Link>
+            <Link
               to="/admin/locations"
               className="dt-lift rounded-2xl border border-slate-200 bg-white p-5 hover:border-green-400 dark:border-slate-800 dark:bg-slate-900"
             >

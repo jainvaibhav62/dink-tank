@@ -147,5 +147,18 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update, delete: if isAdmin();
     }
+
+    // Live events + their per-court matches: world-readable so anyone can watch
+    // via the share link (no sign-in). Only an admin creates/edits them — one
+    // organizer drives scoring from the broadcast screen.
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /eventMatches/{matchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }
