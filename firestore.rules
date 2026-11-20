@@ -148,17 +148,46 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Live events + their per-court matches: world-readable so anyone can watch
-    // via the share link (no sign-in). Only an admin creates/edits them — one
-    // organizer drives scoring from the broadcast screen.
+    // Live events: world-readable so anyone can watch/score via the share link
+    // (no sign-in). Only an admin creates/edits the event itself (roster, rounds).
     match /events/{eventId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
+    // Self check-in: anyone with the link can check a player in/out (no auth).
+    // Shape-locked so a write can't do anything but set the three fields.
+    match /eventCheckins/{id} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasOnly(['eventId', 'participantId', 'checkedIn']) &&
+        request.resource.data.checkedIn is bool;
+    }
+
+    // A legal event score: whole, non-negative, not tied, winner reached the
+    // event's target and led by its win-by margin (read from the event doc).
+    function legalEventScore(data, eventId) {
+      let e = get(/databases/$(database)/documents/events/$(eventId)).data;
+      let target = ('pointsTarget' in e) ? e.pointsTarget : 11;
+      let margin = ('winBy' in e) ? e.winBy : 2;
+      return data.scoreA is int && data.scoreB is int &&
+        data.scoreA >= 0 && data.scoreB >= 0 && data.scoreA != data.scoreB &&
+        (data.scoreA > data.scoreB
+          ? (data.scoreA - data.scoreB >= margin && data.scoreA >= target && data.winner == 'A')
+          : (data.scoreB - data.scoreA >= margin && data.scoreB >= target && data.winner == 'B'));
+    }
+
+    // Matches: admin creates rounds. Anyone with the link may submit a score
+    // exactly once — the `status != 'completed'` guard makes it one-time, so a
+    // submitted score is locked; only an admin can then correct it.
     match /eventMatches/{matchId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() ||
+        (resource.data.status != 'completed' &&
+         request.resource.data.status == 'completed' &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scoreA', 'scoreB', 'winner', 'status']) &&
+         legalEventScore(request.resource.data, resource.data.eventId));
+      allow delete: if isAdmin();
     }
   }
 }

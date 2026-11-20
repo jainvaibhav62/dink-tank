@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -18,10 +19,57 @@ import { converter } from './firestore'
 import { initialsOf } from '../data/roster'
 import { buildNextRound } from './eventSchedule'
 import { validatePickleballScore } from './fixtures'
-import type { EventMatch, EventParticipant, PickleEvent } from '../types'
+import type { EventCheckin, EventMatch, EventParticipant, PickleEvent } from '../types'
 
 const eventsRef = collection(db, 'events').withConverter(converter<PickleEvent>())
 const eventMatchesRef = collection(db, 'eventMatches').withConverter(converter<EventMatch>())
+const checkinsRef = collection(db, 'eventCheckins').withConverter(converter<EventCheckin>())
+
+function checkinDocId(eventId: string, participantId: string) {
+  return `${eventId}_${participantId}`
+}
+
+/** Public: a player checks themselves in (or out). No auth required. */
+export async function setCheckin(eventId: string, participantId: string, checkedIn: boolean) {
+  await setDoc(doc(db, 'eventCheckins', checkinDocId(eventId, participantId)), {
+    eventId,
+    participantId,
+    checkedIn,
+  })
+}
+
+/** Live set of checked-in participant ids. */
+export function subscribeToCheckins(eventId: string, cb: (ids: Set<string>) => void) {
+  return onSnapshot(query(checkinsRef, where('eventId', '==', eventId)), (snap) => {
+    const ids = new Set<string>()
+    snap.docs.forEach((d) => {
+      const c = d.data()
+      if (c.checkedIn) ids.add(c.participantId)
+    })
+    cb(ids)
+  })
+}
+
+async function listCheckedInIds(eventId: string): Promise<Set<string>> {
+  const snap = await getDocs(query(checkinsRef, where('eventId', '==', eventId)))
+  const ids = new Set<string>()
+  snap.docs.forEach((d) => {
+    const c = d.data()
+    if (c.checkedIn) ids.add(c.participantId)
+  })
+  return ids
+}
+
+/** Admin: append a new player to an event's roster mid-session. */
+export async function addParticipant(eventId: string, name: string) {
+  const event = await getEvent(eventId)
+  if (!event) throw new Error('Event not found.')
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const nextNum = event.participants.length + 1
+  const participant: EventParticipant = { id: `p${nextNum}`, name: trimmed, initials: initialsOf(trimmed) }
+  await updateDoc(doc(db, 'events', eventId), { participants: [...event.participants, participant] })
+}
 
 export interface CreateEventInput {
   name: string
@@ -106,9 +154,12 @@ export async function generateNextRound(eventId: string): Promise<{ round: numbe
     }
   }
 
-  const ids = event.participants.map((p) => p.id)
+  // Only checked-in players enter the rotation.
+  const checkedIn = await listCheckedInIds(eventId)
+  const ids = event.participants.map((p) => p.id).filter((id) => checkedIn.has(id))
+  if (ids.length < 4) throw new Error('Need at least 4 checked-in players to start a round.')
   const { matches } = buildNextRound(ids, event.courtCount, existing)
-  if (matches.length === 0) throw new Error('Not enough players to form a court.')
+  if (matches.length === 0) throw new Error('Not enough checked-in players to form a court.')
 
   const round = event.currentRound + 1
   const batch = writeBatch(db)

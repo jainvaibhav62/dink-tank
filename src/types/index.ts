@@ -210,6 +210,14 @@ export interface PickleEvent {
   createdAt: Timestamp
 }
 
+/** A player's self check-in for an event (doc id: `${eventId}_${participantId}`). */
+export interface EventCheckin {
+  id: string
+  eventId: string
+  participantId: string
+  checkedIn: boolean
+}
+
 export type EventMatchStatus = 'scheduled' | 'completed'
 
 /** One match on one court in one round. teamA/teamB hold EventParticipant ids. */

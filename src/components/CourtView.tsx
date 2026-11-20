@@ -34,6 +34,7 @@ export function CourtView({
   pointsTarget,
   winBy,
   editable = false,
+  canCorrect = false,
   onScore,
   onClear,
 }: {
@@ -42,7 +43,10 @@ export function CourtView({
   courtName: string
   pointsTarget: number
   winBy: number
+  /** Anyone may submit a score once while the match is unscored. */
   editable?: boolean
+  /** Admin-only: re-open/correct an already-scored match. */
+  canCorrect?: boolean
   onScore?: (match: EventMatch, a: number, b: number) => Promise<void>
   onClear?: (matchId: string) => Promise<void>
 }) {
@@ -55,7 +59,7 @@ export function CourtView({
   const done = match.status === 'completed'
   const aWon = done && match.winner === 'A'
   const bWon = done && match.winner === 'B'
-  const showForm = editable && (!done || editing)
+  const showForm = (editable && !done) || (canCorrect && editing)
 
   async function save() {
     if (!onScore) return
@@ -164,12 +168,13 @@ export function CourtView({
             disabled={saving || a === '' || b === ''}
             className="rounded-md bg-green-600 px-3 py-1 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : 'Submit score'}
           </button>
+          <span className="text-[10px] text-slate-500">Scores lock once submitted</span>
           {error && <span className="w-full text-xs text-red-400">{error}</span>}
         </div>
       )}
-      {editable && done && !editing && (
+      {canCorrect && done && !editing && (
         <div className="flex justify-end gap-3 border-t border-slate-800 bg-slate-950/60 px-3 py-1.5">
           <button onClick={() => setEditing(true)} className="text-xs font-medium text-slate-400 hover:text-white">
             Edit score
