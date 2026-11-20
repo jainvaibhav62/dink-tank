@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { TournamentStandings } from '../components/TournamentStandings'
 import { AnnouncementBanner } from '../components/AnnouncementBanner'
+import { LiveEventsCallout } from '../components/LiveEventsCallout'
 import { Podium } from '../components/Podium'
 import { StatTile } from '../components/StatTile'
 import { fetchPublicProfiles } from '../services/auth'
@@ -62,6 +63,9 @@ export function LandingPage() {
           ))}
         </div>
       )}
+
+      {/* Live now — anyone can follow without signing in */}
+      <LiveEventsCallout />
 
       {/* Hero */}
       <div className="dt-hero-gradient relative overflow-hidden rounded-3xl p-10 text-white shadow-xl sm:p-16">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { PlayerStatsCard } from '../components/PlayerStatsCard'
+import { LiveEventsCallout } from '../components/LiveEventsCallout'
 import { LandingPage } from './Landing'
 import {
   computePlayerStats,
@@ -89,6 +90,7 @@ export function HomePage() {
 
   return (
     <div className="space-y-6">
+      <LiveEventsCallout />
       <div className="animate-dt-rise">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Welcome, {profile.displayName}</h1>
         <p className="text-slate-600 dark:text-slate-400">
