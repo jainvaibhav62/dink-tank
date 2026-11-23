@@ -33,6 +33,7 @@ export function LiveEventPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [newName, setNewName] = useState('')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (!eventId) return
@@ -110,6 +111,13 @@ export function LiveEventPage() {
 
   const effectiveTab: Tab = tab ?? (event.currentRound > 0 ? 'courts' : 'checkin')
   const checkedInCount = event.participants.filter((p) => checkedIn.has(p.id)).length
+
+  const q = search.trim().toLowerCase()
+  const visibleParticipants = q
+    ? event.participants.filter(
+        (p) => p.name.toLowerCase().includes(q) || p.initials.toLowerCase().includes(q),
+      )
+    : event.participants
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true)
@@ -263,8 +271,32 @@ export function LiveEventPage() {
             </form>
           )}
 
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${event.participants.length} players…`}
+              className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-9 text-sm dark:border-slate-700 dark:bg-slate-800"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {visibleParticipants.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+              No players match “{search}”.
+            </p>
+          ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {event.participants.map((p) => {
+            {visibleParticipants.map((p) => {
               const isIn = checkedIn.has(p.id)
               return (
                 <div key={p.id} className="relative">
@@ -307,6 +339,7 @@ export function LiveEventPage() {
               )
             })}
           </div>
+          )}
         </div>
       )}
 
