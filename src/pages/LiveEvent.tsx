@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { CourtView } from '../components/CourtView'
@@ -6,10 +6,9 @@ import { RatingBadge } from '../components/RatingBadge'
 import {
   addParticipant,
   clearEventScore,
-  generateNextRound,
   recordEventScore,
   removeParticipant,
-  seatRound1Arrivals,
+  seatFreeCourts,
   setCheckin,
   setEventStatus,
   subscribeToCheckins,
@@ -54,33 +53,63 @@ export function LiveEventPage() {
     () => new Map((event?.participants ?? []).map((p) => [p.id, p])),
     [event],
   )
-  const currentMatches = useMemo(
-    () => matches.filter((m) => m.round === event?.currentRound).sort((a, b) => a.courtIndex - b.courtIndex),
-    [matches, event?.currentRound],
-  )
+  // Continuous play: each court shows its in-progress game, or — until the next
+  // foursome is seated — the last completed game played on it (with its score).
+  const courtMatches = useMemo(() => {
+    if (!event) return []
+    const out = []
+    for (let c = 0; c < event.courtCount; c++) {
+      const onCourt = matches.filter((m) => m.courtIndex === c)
+      const active = onCourt.find((m) => m.status === 'scheduled')
+      if (active) {
+        out.push(active)
+        continue
+      }
+      const lastDone = onCourt.filter((m) => m.status === 'completed').sort((a, b) => b.round - a.round)[0]
+      if (lastDone) out.push(lastDone)
+    }
+    return out
+  }, [event, matches])
+  // The queue: checked-in players not currently on a court. Fewest-games-first
+  // seating means these go on next — nobody is left waiting while others play on.
   const restingIds = useMemo(() => {
     if (!event) return []
-    const playing = new Set(currentMatches.flatMap((m) => [...m.teamA, ...m.teamB]))
-    return event.participants.filter((p) => checkedIn.has(p.id) && !playing.has(p.id)).map((p) => p.id)
-  }, [event, currentMatches, checkedIn])
+    const onCourt = new Set(
+      matches.filter((m) => m.status === 'scheduled').flatMap((m) => [...m.teamA, ...m.teamB]),
+    )
+    return event.participants.filter((p) => checkedIn.has(p.id) && !onCourt.has(p.id)).map((p) => p.id)
+  }, [event, matches, checkedIn])
   const leaderboard = useMemo(
     () => (event ? computeEventLeaderboard(event.participants, matches) : []),
     [event, matches],
   )
+  // How many courts could be refilled right now (free courts × available 4s).
+  const seatInfo = useMemo(() => {
+    if (!event) return { seatableCourts: 0, waiting: 0, liveCourts: 0 }
+    const active = matches.filter((m) => m.status === 'scheduled')
+    const busy = new Set(active.flatMap((m) => [...m.teamA, ...m.teamB]))
+    const waiting = event.participants.filter((p) => checkedIn.has(p.id) && !busy.has(p.id)).length
+    const freeCourts = event.courtCount - new Set(active.map((m) => m.courtIndex)).size
+    return { waiting, liveCourts: active.length, seatableCourts: Math.min(freeCourts, Math.floor(waiting / 4)) }
+  }, [event, matches, checkedIn])
+
+  // Auto-refill: on the admin's screen (the stadium/TV view), the moment a court
+  // frees up or new players check in, seat the next foursome — no manual step.
+  const seatingRef = useRef(false)
+  useEffect(() => {
+    if (!isAdmin || !event || event.status === 'completed') return
+    if (seatInfo.seatableCourts < 1 || seatingRef.current) return
+    seatingRef.current = true
+    seatFreeCourts(event.id).finally(() => {
+      seatingRef.current = false
+    })
+  }, [isAdmin, event, seatInfo.seatableCourts])
 
   if (loading) return <p className="text-slate-500 dark:text-slate-400">Loading event…</p>
   if (!event) return <p className="text-slate-500 dark:text-slate-400">Event not found.</p>
 
   const effectiveTab: Tab = tab ?? (event.currentRound > 0 ? 'courts' : 'checkin')
-  const roundScored = currentMatches.length > 0 && currentMatches.every((m) => m.status === 'completed')
   const checkedInCount = event.participants.filter((p) => checkedIn.has(p.id)).length
-
-  // Round 1 is dynamic: courts fill as players are checked in.
-  const round1 = matches.filter((m) => m.round === 1)
-  const seatedRound1 = new Set(round1.flatMap((m) => [...m.teamA, ...m.teamB]))
-  const waitingToSeat = event.participants.filter((p) => checkedIn.has(p.id) && !seatedRound1.has(p.id)).length
-  const canSeatRound1 = event.currentRound <= 1 && round1.length < event.courtCount
-  const seatableCourts = Math.min(event.courtCount - round1.length, Math.floor(waitingToSeat / 4))
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true)
@@ -101,16 +130,16 @@ export function LiveEventPage() {
 
   async function handleCheckin(participantId: string, next: boolean) {
     setError('')
-    // Don't let a player be checked out while they're on a court this round.
-    if (!next && currentMatches.some((m) => [...m.teamA, ...m.teamB].includes(participantId))) {
-      setError('That player is on a court this round — you can’t check them out yet.')
+    // Don't let a player be checked out while they're mid-game on a court.
+    if (
+      !next &&
+      matches.some((m) => m.status === 'scheduled' && [...m.teamA, ...m.teamB].includes(participantId))
+    ) {
+      setError('That player is in a live game — you can’t check them out yet.')
       return
     }
     await setCheckin(event!.id, participantId, next)
-    // Dynamic round 1: seat a court as soon as four are ready.
-    if (next && event!.currentRound <= 1) {
-      await seatRound1Arrivals(event!.id)
-    }
+    // The auto-refill effect seats any now-available court the moment state updates.
   }
 
   async function handleRemove(participantId: string, name: string) {
@@ -137,7 +166,7 @@ export function LiveEventPage() {
             {checkedInCount}/{event.participants.length} checked in · {event.courtCount} courts · race to{' '}
             {event.pointsTarget}
             {event.winBy > 1 ? ` (win by ${event.winBy})` : ''} ·{' '}
-            {event.currentRound > 0 ? `Round ${event.currentRound}` : 'Not started'}
+            {seatInfo.liveCourts > 0 ? `${seatInfo.liveCourts} court${seatInfo.liveCourts === 1 ? '' : 's'} live` : 'Not started'}
           </p>
         </div>
         <div className="flex rounded-lg border border-slate-200 bg-white p-1 text-sm dark:border-slate-800 dark:bg-slate-900">
@@ -150,43 +179,35 @@ export function LiveEventPage() {
       {/* Admin round controls */}
       {isAdmin && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-          {/* Round 1 — seat checked-in players onto courts as they arrive */}
-          {canSeatRound1 && (
+          {/* Continuous play: courts auto-refill on this screen. This is a manual
+              nudge for when 4+ are waiting and a court is open. */}
+          {event.status !== 'completed' && (
             <button
-              onClick={() => run(() => seatRound1Arrivals(event.id))}
-              disabled={busy || seatableCourts < 1}
-              title={seatableCourts < 1 ? 'Check in 4 players not yet on a court' : ''}
+              onClick={() => run(() => seatFreeCourts(event.id))}
+              disabled={busy || seatInfo.seatableCourts < 1}
+              title={seatInfo.seatableCourts < 1 ? 'Courts auto-fill — nothing waiting to seat right now' : ''}
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
             >
               {busy
                 ? 'Working…'
-                : `▶ Seat ${Math.max(seatableCourts, 0)} court${seatableCourts === 1 ? '' : 's'}${waitingToSeat > 0 ? ` · ${waitingToSeat} waiting` : ''}`}
+                : seatInfo.seatableCourts >= 1
+                  ? `▶ Seat ${seatInfo.seatableCourts} court${seatInfo.seatableCourts === 1 ? '' : 's'}`
+                  : '▶ Courts auto-fill'}
             </button>
           )}
-          {/* Round 2+ — randomized rotation */}
-          {event.currentRound >= 1 && (
-            <button
-              onClick={() => run(() => generateNextRound(event.id))}
-              disabled={busy || !roundScored || checkedInCount < 4}
-              title={
-                checkedInCount < 4
-                  ? 'Need at least 4 checked-in players'
-                  : !roundScored
-                    ? 'Finish scoring this round first'
-                    : ''
-              }
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {busy ? 'Working…' : `▶ Start Round ${event.currentRound + 1}`}
-            </button>
+          {event.status !== 'completed' && (
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              {seatInfo.liveCourts} live · {seatInfo.waiting} on the bench
+            </span>
           )}
           {event.currentRound > 0 && (
             <button
               onClick={() => run(() => undoLastRound(event.id))}
               disabled={busy}
+              title="Removes the most recent seating wave"
               className="rounded-md bg-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
             >
-              Undo round
+              Undo seating
             </button>
           )}
           {event.status !== 'completed' ? (
@@ -205,11 +226,6 @@ export function LiveEventPage() {
             >
               Reopen
             </button>
-          )}
-          {roundScored && event.status !== 'completed' && (
-            <span className="text-sm font-medium text-green-600 dark:text-green-400">
-              ✓ Round {event.currentRound} complete — start the next one
-            </span>
           )}
           {error && <span className="w-full text-sm text-red-600 dark:text-red-400">{error}</span>}
         </div>
@@ -295,21 +311,21 @@ export function LiveEventPage() {
       )}
 
       {effectiveTab === 'courts' &&
-        (currentMatches.length === 0 ? (
+        (courtMatches.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
             <div className="mb-2 text-4xl">🎾</div>
-            <p className="font-medium text-slate-700 dark:text-slate-200">
-              {event.currentRound === 0 ? 'Waiting for the first round to start.' : 'No matches this round.'}
-            </p>
+            <p className="font-medium text-slate-700 dark:text-slate-200">Waiting for the first games to start.</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              {isAdmin ? 'Check players in, then hit “Start Round 1”.' : 'Hang tight — play starts soon. Check in on the Check-in tab!'}
+              {isAdmin
+                ? 'Check players in — courts fill automatically as soon as 4 are ready.'
+                : 'Hang tight — play starts soon. Check in on the Check-in tab!'}
             </p>
           </div>
         ) : (
           <>
             <div className="rounded-2xl bg-slate-950 p-3 sm:p-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {currentMatches.map((m) => (
+                {courtMatches.map((m) => (
                   <CourtView
                     key={m.id}
                     match={m}
@@ -332,7 +348,7 @@ export function LiveEventPage() {
                   <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                     🪑 On the bench — up next ({restingIds.length})
                   </h3>
-                  <span className="text-xs text-slate-400 dark:text-slate-500">Nobody waits more than one round</span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">Fewest games play next — seated the moment a court frees</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {restingIds.map((id) => {

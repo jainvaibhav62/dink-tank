@@ -17,7 +17,7 @@ import {
 import { db } from '../lib/firebase'
 import { converter } from './firestore'
 import { initialsOf } from '../data/roster'
-import { buildNextRound } from './eventSchedule'
+import { buildNextRound, bestPairing, pairKey } from './eventSchedule'
 import { validatePickleballScore } from './fixtures'
 import type { EventCheckin, EventMatch, EventParticipant, PickleEvent } from '../types'
 
@@ -260,6 +260,71 @@ export async function seatRound1Arrivals(eventId: string): Promise<number> {
   if (event.currentRound === 0) {
     batch.update(doc(db, 'events', eventId), { currentRound: 1, status: 'live' })
   }
+  await batch.commit()
+  return created
+}
+
+/** Continuous play: fill every currently-free court with the next waiting
+ * players — no waiting for a whole "round" to finish. A court is free when it
+ * has no in-progress (scheduled) match. Players are seated fewest-games-first
+ * so whoever has sat out longest goes on next, and teams avoid recent partners.
+ * Admin-only (creates matches). Idempotent: returns 0 when nothing to seat.
+ * Replaces both seatRound1Arrivals and generateNextRound for the live flow. */
+export async function seatFreeCourts(eventId: string): Promise<number> {
+  const event = await getEvent(eventId)
+  if (!event || event.status === 'completed') return 0
+
+  const existing = await listEventMatches(eventId)
+  const active = existing.filter((m) => m.status === 'scheduled')
+  const occupied = new Set(active.map((m) => m.courtIndex))
+  const freeCourts: number[] = []
+  for (let c = 0; c < event.courtCount; c++) if (!occupied.has(c)) freeCourts.push(c)
+  if (freeCourts.length === 0) return 0
+
+  const checkedIn = await listCheckedInIds(eventId)
+  const busy = new Set(active.flatMap((m) => [...m.teamA, ...m.teamB]))
+  const available = event.participants.map((p) => p.id).filter((id) => checkedIn.has(id) && !busy.has(id))
+  if (available.length < 4) return 0
+
+  // Games played across every match (completed + in-progress) drives fairness;
+  // fewest first. Track partnerships so pairings stay varied.
+  const games: Record<string, number> = {}
+  const partnered = new Set<string>()
+  for (const m of existing) {
+    for (const id of [...m.teamA, ...m.teamB]) games[id] = (games[id] ?? 0) + 1
+    if (m.teamA.length === 2) partnered.add(pairKey(m.teamA[0], m.teamA[1]))
+    if (m.teamB.length === 2) partnered.add(pairKey(m.teamB[0], m.teamB[1]))
+  }
+  const queue = shuffle(available).sort((a, b) => (games[a] ?? 0) - (games[b] ?? 0))
+
+  // Each seating wave bumps the round counter (used loosely for ordering/history).
+  const round = event.currentRound + 1
+  const batch = writeBatch(db)
+  let created = 0
+  for (const courtIndex of freeCourts) {
+    if (queue.length < 4) break
+    const four = queue.splice(0, 4)
+    const { teamA, teamB } = bestPairing(four, partnered)
+    // Reserve these partnerships so two courts seated in the same wave differ.
+    partnered.add(pairKey(teamA[0], teamA[1]))
+    partnered.add(pairKey(teamB[0], teamB[1]))
+    const ref = doc(eventMatchesRef)
+    batch.set(ref, {
+      id: ref.id,
+      eventId,
+      round,
+      courtIndex,
+      teamA,
+      teamB,
+      scoreA: null,
+      scoreB: null,
+      winner: null,
+      status: 'scheduled',
+    } as unknown as EventMatch)
+    created++
+  }
+  if (created === 0) return 0
+  batch.update(doc(db, 'events', eventId), { currentRound: round, status: 'live' })
   await batch.commit()
   return created
 }

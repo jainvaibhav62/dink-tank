@@ -30,7 +30,7 @@ function shuffle<T>(arr: T[]): T[] {
   return r
 }
 
-function pairKey(a: string, b: string) {
+export function pairKey(a: string, b: string) {
   return [a, b].sort().join('|')
 }
 
@@ -68,7 +68,7 @@ export function analyzeHistory(
 
 /** Split 4 players into two teams, preferring the pairing with the fewest
  * previously-seen partnerships (for variety across rounds). */
-function bestPairing(four: string[], partnered: Set<string>): { teamA: string[]; teamB: string[] } {
+export function bestPairing(four: string[], partnered: Set<string>): { teamA: string[]; teamB: string[] } {
   const [a, b, c, d] = four
   const options: Array<[string[], string[]]> = [
     [[a, b], [c, d]],
